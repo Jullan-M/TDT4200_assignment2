@@ -3,7 +3,7 @@
 
 
 typedef unsigned char uchar;
-void savebmp(char *name, uchar *buffer, int x, int y);
-void readbmp(char *filename, uchar *array);
+void savebmp(char* name, uchar* buffer, int x, int y);
+void readbmp(char* filename, uchar* array);
 
 #endif

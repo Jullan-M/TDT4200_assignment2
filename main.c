@@ -1,15 +1,13 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include "bitmap.h"
 #include <mpi.h>
-
 
 #define XSIZE 2560 // Size of before image
 #define YSIZE 2048
 
-void invert_colors(uchar* image) {
-    for (int y = 0; y < YSIZE; y++) {
+void invert_colors(uchar* image, int left, int local_ysz) {
+    for (int y = left; y < left + local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 image[3 * XSIZE * y + x * 3 + c] = 255 - image[3 * XSIZE * y + x * 3 + c];
@@ -18,10 +16,10 @@ void invert_colors(uchar* image) {
     }
 }
 
-void flip_image(uchar* image) {
+void flip_image(uchar* image, int left, int local_ysz) {
     // First we make a copy of the image
-    uchar *temp = malloc(XSIZE * YSIZE * 3);
-    for (int y = 0; y < YSIZE; y++) {
+    uchar *temp = malloc(XSIZE * local_ysz * 3);
+    for (int y = left; y < left + local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 temp[3 * XSIZE * y + x * 3 + c] = image[3 * XSIZE * y + x * 3 + c];
@@ -30,7 +28,7 @@ void flip_image(uchar* image) {
     }
 
     // Now the flipping begins
-    for (int y = 0; y < YSIZE; y++) {
+    for (int y = left; y < left + local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 image[3 * XSIZE * y + (XSIZE - x - 1) * 3 + c] = temp[3 * XSIZE * y + x * 3 + c];
@@ -40,8 +38,8 @@ void flip_image(uchar* image) {
     free(temp);
 }
 
-void all_blacks_are_now_blue(uchar* image) {
-    for (int y = 0; y < YSIZE; y++) {
+void all_blacks_are_now_blue(uchar* image, int left, int local_ysz) {
+    for (int y = left; y < left + local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             uchar* r = & image[3 * XSIZE * y + x * 3 + 0];
             uchar* g = & image[3 * XSIZE * y + x * 3 + 1];
@@ -54,19 +52,9 @@ void all_blacks_are_now_blue(uchar* image) {
     }
 }
 
-void random_rectangle(uchar* image) {
-    for (int y = 200; y < 400; y++) {
-        for (int x = 2000; x < 2500; x++) {
-            for (int c = 0; c < 3; c++) {
-                image[3 * XSIZE * y + x * 3 + c] = 255;
-            }
-        }
-    }
-}
-
-void double_image_size(const uchar* image_old, uchar* image_new) {
+void double_image_size(const uchar* image_old, uchar* image_new, int left, int local_ysz) {
     // Duplicate each pixel in original image to 2x2 areas in new image.
-    for (int y = 0; y < YSIZE; y++) {
+    for (int y = left; y < left + local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 image_new[3 * (2 * XSIZE) * (2*y) + (2*x) * 3 + c] = image_old[3 * XSIZE * y + x * 3 + c];
@@ -78,58 +66,64 @@ void double_image_size(const uchar* image_old, uchar* image_new) {
     }
 }
 
-const int MAX_STRING = 100;
-int main() {
-    char greeting[MAX_STRING];
-    int comm_sz;
-    int my_rank;
-    MPI_Init(NULL, NULL);
-    MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
-    if (my_rank != 0) {
-        /* Create message */
-        sprintf(greeting, "Greetings from process %d of %d!",
-                my_rank, comm_sz);
-        /* Send message to process 0 */
-        MPI_Send(greeting, strlen(greeting)+1, MPI_CHAR, 0, 0,
-                 MPI_COMM_WORLD);
+int main() {
+    uchar* image;
+    uchar* image_db;
+
+    // Do the typical MPI initialization
+    int comm_sz, my_rank;
+    MPI_Init(NULL, NULL);
+    MPI_Comm comm = MPI_COMM_WORLD;
+    MPI_Comm_size(comm, &comm_sz);
+    MPI_Comm_rank(comm, &my_rank);
+
+    // We divide the image row-wise an distribute the rows to the different processes
+    int local_YSZ = YSIZE / comm_sz;
+    int local_n = YSIZE * XSIZE * 3 / comm_sz;
+    int local_size = XSIZE * local_YSZ * 3;
+
+    int local_left = my_rank * local_n;
+
+    uchar* local_im = calloc(local_size, 1);
+    uchar* local_im_db = malloc(4 * local_size);
+
+    if (my_rank == 0) {
+        image = calloc(YSIZE * XSIZE * 3, 1);
+        image_db = calloc(4 * YSIZE * XSIZE * 3, 1);
+        readbmp("before.bmp", image);
+        MPI_Scatter(image, local_n, MPI_UNSIGNED_CHAR, local_im, local_n, MPI_UNSIGNED_CHAR, 0, comm);
+        MPI_Scatter(image_db, 4 * local_n, MPI_UNSIGNED_CHAR, local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
     } else {
-        /* Print my message */
-        printf("Greetings from process %d of %d!\n", my_rank, comm_sz);
-        for (int q = 1; q < comm_sz; q++) {
-            /* Receive message from process q */
-            MPI_Recv(greeting, MAX_STRING, MPI_CHAR, q,
-                     0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            /* Print message from process q */
-            printf("%s\n", greeting);
-        }
+        MPI_Scatter(image, local_n, MPI_UNSIGNED_CHAR, local_im, local_n, MPI_UNSIGNED_CHAR, 0, comm);
+        MPI_Scatter(image_db, 4 * local_n, MPI_UNSIGNED_CHAR, local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
+    }
+
+    // Inverting the colors
+    invert_colors(local_im, local_left, local_YSZ);
+
+    // Flipping the image horizontally
+    flip_image(local_im, local_left, local_YSZ);
+
+    // Change some colors
+    all_blacks_are_now_blue(local_im, local_left, local_YSZ);
+
+    // Resize image
+    double_image_size(local_im, local_im_db, local_left, local_YSZ);
+
+    if (my_rank == 0) {
+        MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0, comm);
+        savebmp("after.bmp", image, XSIZE, YSIZE);
+        savebmp("after_4x.bmp", image, 2 * XSIZE, 2 * YSIZE);
+        free(image);
+        free(image_db);
+    } else {
+        MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0 , comm);
     }
 
     /* Shut down MPI */
     MPI_Finalize();
 
-    uchar* image = calloc(XSIZE * YSIZE * 3, 1); // Three uchars per pixel (RGB)
-	readbmp("before.bmp", image);
 
-	// Alter the image here
-
-	// Inverting the colors
-	invert_colors(image);
-
-	// Flipping the image horizontally
-	flip_image(image);
-
-	// Change some colors
-	all_blacks_are_now_blue(image);
-
-	// Resize image
-	//  This requires that we make a new uchar pointer, since we can't change the size of the existing array.
-	uchar* new_image = malloc(4 * XSIZE * YSIZE * 3);
-	double_image_size(image, new_image);
-
-	savebmp("after.bmp", new_image, 2*XSIZE, 2*YSIZE);
-	free(image);
-	free(new_image);
 	return 0;
 }
