@@ -82,12 +82,13 @@ int main() {
     int local_YSZ = YSIZE / comm_sz;
     int local_n = YSIZE * XSIZE * 3 / comm_sz;
 
-    int local_left = my_rank * local_n;
-
+    // Initialize the local images
     uchar* local_im = calloc(local_n, 1);
     uchar* local_im_db = malloc(4 * local_n);
 
+    // Use MPI_Scatter to distribute data to the processes
     if (my_rank == 0) {
+        // Root process "stitches" the image together from other processes
         image = calloc(YSIZE * XSIZE * 3, 1);
         image_db = calloc(4 * YSIZE * XSIZE * 3, 1);
         readbmp("before.bmp", image);
@@ -110,23 +111,19 @@ int main() {
 
     if (my_rank == 0) {
         MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0, comm);
+        MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
 
         savebmp("after.bmp", image, XSIZE, YSIZE);
-        free(image);
-    } else {
-        MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0 , comm);
-    }
-
-    if (my_rank == 0) {
-        MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
-
         savebmp("after_4x.bmp", image_db, 2 * XSIZE, 2 * YSIZE);
+
+        free(image);
         free(image_db);
     } else {
+        MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0 , comm);
         MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
     }
 
-    /* Shut down MPI */
+    // Shut down MPI
     MPI_Finalize();
 
 
