@@ -92,10 +92,8 @@ int main() {
         image_db = calloc(4 * YSIZE * XSIZE * 3, 1);
         readbmp("before.bmp", image);
         MPI_Scatter(image, local_n, MPI_UNSIGNED_CHAR, local_im, local_n, MPI_UNSIGNED_CHAR, 0, comm);
-        MPI_Scatter(image_db, 4 * local_n, MPI_UNSIGNED_CHAR, local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
     } else {
         MPI_Scatter(image, local_n, MPI_UNSIGNED_CHAR, local_im, local_n, MPI_UNSIGNED_CHAR, 0, comm);
-        MPI_Scatter(image_db, 4 * local_n, MPI_UNSIGNED_CHAR, local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
     }
 
     // Inverting the colors
@@ -112,14 +110,19 @@ int main() {
 
     if (my_rank == 0) {
         MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0, comm);
-        MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
 
         savebmp("after.bmp", image, XSIZE, YSIZE);
-        savebmp("after_4x.bmp", image, 2 * XSIZE, 2 * YSIZE);
         free(image);
-        free(image_db);
     } else {
         MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0 , comm);
+    }
+
+    if (my_rank == 0) {
+        MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
+
+        savebmp("after_4x.bmp", image_db, 2 * XSIZE, 2 * YSIZE);
+        free(image_db);
+    } else {
         MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
     }
 
