@@ -6,8 +6,8 @@
 #define XSIZE 2560 // Size of before image
 #define YSIZE 2048
 
-void invert_colors(uchar* image, int left, int local_ysz) {
-    for (int y = left; y < left + local_ysz; y++) {
+void invert_colors(uchar* image, int local_ysz) {
+    for (int y = 0; y < local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 image[3 * XSIZE * y + x * 3 + c] = 255 - image[3 * XSIZE * y + x * 3 + c];
@@ -16,10 +16,10 @@ void invert_colors(uchar* image, int left, int local_ysz) {
     }
 }
 
-void flip_image(uchar* image, int left, int local_ysz) {
+void flip_image(uchar* image, int local_ysz) {
     // First we make a copy of the image
     uchar *temp = malloc(XSIZE * local_ysz * 3);
-    for (int y = left; y < left + local_ysz; y++) {
+    for (int y = 0; y < local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 temp[3 * XSIZE * y + x * 3 + c] = image[3 * XSIZE * y + x * 3 + c];
@@ -28,7 +28,7 @@ void flip_image(uchar* image, int left, int local_ysz) {
     }
 
     // Now the flipping begins
-    for (int y = left; y < left + local_ysz; y++) {
+    for (int y = 0; y < local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 image[3 * XSIZE * y + (XSIZE - x - 1) * 3 + c] = temp[3 * XSIZE * y + x * 3 + c];
@@ -38,8 +38,8 @@ void flip_image(uchar* image, int left, int local_ysz) {
     free(temp);
 }
 
-void all_blacks_are_now_blue(uchar* image, int left, int local_ysz) {
-    for (int y = left; y < left + local_ysz; y++) {
+void all_blacks_are_now_blue(uchar* image, int local_ysz) {
+    for (int y = 0; y < local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             uchar* r = & image[3 * XSIZE * y + x * 3 + 0];
             uchar* g = & image[3 * XSIZE * y + x * 3 + 1];
@@ -52,9 +52,9 @@ void all_blacks_are_now_blue(uchar* image, int left, int local_ysz) {
     }
 }
 
-void double_image_size(const uchar* image_old, uchar* image_new, int left, int local_ysz) {
+void double_image_size(const uchar* image_old, uchar* image_new, int local_ysz) {
     // Duplicate each pixel in original image to 2x2 areas in new image.
-    for (int y = left; y < left + local_ysz; y++) {
+    for (int y = 0; y < local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
             for (int c = 0; c < 3; c++) {
                 image_new[3 * (2 * XSIZE) * (2*y) + (2*x) * 3 + c] = image_old[3 * XSIZE * y + x * 3 + c];
@@ -81,12 +81,11 @@ int main() {
     // We divide the image row-wise an distribute the rows to the different processes
     int local_YSZ = YSIZE / comm_sz;
     int local_n = YSIZE * XSIZE * 3 / comm_sz;
-    int local_size = XSIZE * local_YSZ * 3;
 
     int local_left = my_rank * local_n;
 
-    uchar* local_im = calloc(local_size, 1);
-    uchar* local_im_db = malloc(4 * local_size);
+    uchar* local_im = calloc(local_n, 1);
+    uchar* local_im_db = malloc(4 * local_n);
 
     if (my_rank == 0) {
         image = calloc(YSIZE * XSIZE * 3, 1);
@@ -100,25 +99,28 @@ int main() {
     }
 
     // Inverting the colors
-    invert_colors(local_im, local_left, local_YSZ);
+    invert_colors(local_im, local_YSZ);
 
     // Flipping the image horizontally
-    flip_image(local_im, local_left, local_YSZ);
+    flip_image(local_im, local_YSZ);
 
     // Change some colors
-    all_blacks_are_now_blue(local_im, local_left, local_YSZ);
+    all_blacks_are_now_blue(local_im, local_YSZ);
 
     // Resize image
-    double_image_size(local_im, local_im_db, local_left, local_YSZ);
+    double_image_size(local_im, local_im_db, local_YSZ);
 
     if (my_rank == 0) {
         MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0, comm);
+        MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
+
         savebmp("after.bmp", image, XSIZE, YSIZE);
         savebmp("after_4x.bmp", image, 2 * XSIZE, 2 * YSIZE);
         free(image);
         free(image_db);
     } else {
         MPI_Gather(local_im, local_n, MPI_UNSIGNED_CHAR, image, local_n, MPI_UNSIGNED_CHAR, 0 , comm);
+        MPI_Gather(local_im_db, 4 * local_n, MPI_UNSIGNED_CHAR, image_db, 4 * local_n, MPI_UNSIGNED_CHAR, 0, comm);
     }
 
     /* Shut down MPI */
