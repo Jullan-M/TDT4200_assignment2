@@ -41,12 +41,14 @@ void flip_image(uchar* image, int local_ysz) {
 void all_blacks_are_now_blue(uchar* image, int local_ysz) {
     for (int y = 0; y < local_ysz; y++) {
         for (int x = 0; x < XSIZE; x++) {
-            uchar* r = & image[3 * XSIZE * y + x * 3 + 0];
+            uchar* b = & image[3 * XSIZE * y + x * 3 + 0];
             uchar* g = & image[3 * XSIZE * y + x * 3 + 1];
-            uchar* b = & image[3 * XSIZE * y + x * 3 + 2];
+            uchar* r = & image[3 * XSIZE * y + x * 3 + 2];
 
             if (*r < 10 && *g < 10 && *b < 10) {
-                *r = 255; // Okay, this was supposed to be *b, so I may have misunderstood the indexing here.
+                *r = 0;
+                *b = 255;
+                *g = 0;
             }
         }
     }
@@ -125,7 +127,6 @@ int main() {
 
     // Shut down MPI
     MPI_Finalize();
-
 
 	return 0;
 }
